@@ -1,0 +1,9 @@
+phidata
+duckdb
+pandas
+streamlit
+python-dotenv
+openai
+zeep
+xmltodict
+requests

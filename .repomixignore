@@ -1,0 +1,4 @@
+.venv
+tfso-data.db
+tfso-data.db-shm
+tfso-data.db-wal
