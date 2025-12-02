@@ -63,7 +63,7 @@ def main() -> None:
 
     # 4) Download + persist
     print("\n4) Downloading CRM and invoice data into tfso-data.db ...")
-    changed_after = "2024-01-01"  # same as in your Next.js panel; adjust if needed
+    changed_after = "2000-01-01" 
 
     conn = get_connection()
     init_schema(conn)
@@ -84,12 +84,15 @@ def main() -> None:
         print("  - No persons returned from SOAP")
 
     # Invoices
-    invoices = download_invoices(session_id, changed_after)
-    if invoices:
-        n_inv = upsert_invoices(conn, invoices)
-        print(f"  - Upserted {n_inv} invoices into invoices_sync")
-    else:
-        print("  - No invoices returned from SOAP")
+    try:
+        invoices = download_invoices(session_id, changed_after)
+        if invoices:
+            n_inv = upsert_invoices(conn, invoices)
+            print(f"  - Upserted {n_inv} invoices into invoices_sync")
+        else:
+            print("  - No invoices returned from SOAP")
+    except Exception as e:
+        print("  - Failed to download invoices from SOAP:", e)
 
     conn.close()
 
