@@ -1,8 +1,8 @@
 # finago_auth.py
 from typing import List, Dict, Any
 
-from finago_config import NS
-from finago_soap import FinagoSoapClient, Identity
+from .finago_config import NS
+from .finago_soap import FinagoSoapClient, Identity
 
 
 class AuthService:

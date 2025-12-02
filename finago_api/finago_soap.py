@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List
 import requests
 import xmltodict
 
-from finago_config import NS
+from .finago_config import NS
 
 
 def soap_envelope(inner_xml: str) -> str:
