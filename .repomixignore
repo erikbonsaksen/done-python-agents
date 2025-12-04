@@ -1,4 +1,44 @@
-.venv
+.gitignore
+.repomixignore
+
+# --- Sqlite ---
 tfso-data.db
 tfso-data.db-shm
 tfso-data.db-wal
+
+# --- Python cache & build artifacts ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Build / packaging ---
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Logs / temp ---
+*.log
+*.tmp
+*.bak
+
+# --- Secrets ---
+.env
+.env.*

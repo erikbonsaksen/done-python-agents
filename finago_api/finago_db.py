@@ -15,119 +15,28 @@ def get_connection(path: str = DB_PATH) -> sqlite3.Connection:
 def init_schema(conn: sqlite3.Connection) -> None:
     """
     Create tables if they don't exist yet.
+    
+    NOTE: This is now handled by database/init_db.py
+    For backwards compatibility, this function still exists but
+    is deprecated. Use: python database/init_db.py instead
     """
-    cur = conn.cursor()
-
-    # Companies
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS companies_sync (
-            companyId       INTEGER PRIMARY KEY,
-            companyName     TEXT,
-            organizationNo  TEXT,
-            customerNumber  TEXT,
-            email           TEXT,
-            phone           TEXT,
-            dateChanged     TEXT
-        );
-        """
-    )
-
-    # Persons / contacts
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS persons_sync (
-            personId        INTEGER PRIMARY KEY,
-            companyId       INTEGER,
-            customerId      INTEGER,
-            name            TEXT,
-            email           TEXT,
-            phone           TEXT,
-            role            TEXT,
-            dateChanged     TEXT
-        );
-        """
-    )
-
-    # Invoices (AR / AP)
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS invoices_sync (
-            invoiceId       INTEGER PRIMARY KEY,
-            orderId         INTEGER,
-            customerId      INTEGER,
-            customerName    TEXT,
-            invoiceNo       TEXT,
-            supplierName    TEXT,
-            supplierOrgNo   TEXT,
-            invoiceText     TEXT,
-            dateInvoiced    TEXT,
-            dateChanged     TEXT,
-            totalIncVat     REAL,
-            totalVat        REAL,
-            currencySymbol  TEXT,
-            status          TEXT,
-            externalStatus  TEXT
-        );
-        """
-    )
-
-    # Products
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS products_sync (
-            productId      INTEGER PRIMARY KEY,
-            productNo      TEXT,
-            name           TEXT,
-            description    TEXT,
-            unitPrice      REAL,
-            costPrice      REAL,
-            isActive       INTEGER,
-            vatCode        TEXT,
-            dateChanged    TEXT
-        );
-        """
-    )
-
-    # Transactions (general ledger)
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS transactions_sync (
-            transactionId  TEXT PRIMARY KEY,
-            voucherNo      INTEGER,
-            lineNo         INTEGER,
-            date           TEXT,
-            accountNo      TEXT,
-            amount         REAL,
-            debit          REAL,
-            credit         REAL,
-            currency       TEXT,
-            description    TEXT,
-            invoiceNo      TEXT,
-            linkId         INTEGER,
-            ocr            TEXT,
-            customerId     INTEGER,
-            projectId      INTEGER,
-            departmentId   INTEGER
-        );
-        """
-    )
-
-    # Accounts (chart of accounts)
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS accounts_sync (
-            accountNo      TEXT PRIMARY KEY,
-            name           TEXT,
-            accountType    TEXT,
-            isActive       INTEGER,
-            vatCode        TEXT,
-            openingBalance REAL,
-            closingBalance REAL
-        );
-        """
-    )
-
+    import os
+    from pathlib import Path
+    
+    # Get path to core schema
+    project_root = Path(__file__).parent.parent
+    schema_file = project_root / "database" / "schemas" / "core_schema.sql"
+    
+    if not schema_file.exists():
+        print("⚠️  Warning: database/schemas/core_schema.sql not found")
+        print("   Please run: python database/init_db.py")
+        return
+    
+    # Execute schema file
+    with open(schema_file, 'r') as f:
+        sql = f.read()
+    
+    conn.executescript(sql)
     conn.commit()
 
 
@@ -220,6 +129,9 @@ def upsert_persons(conn: sqlite3.Connection, persons: Iterable[Dict[str, Any]]) 
 def upsert_invoices(
     conn: sqlite3.Connection, invoices: Iterable[Dict[str, Any]]
 ) -> int:
+    """
+    UPDATED: Now includes payment status fields and payment date
+    """
     rows = list(invoices)
     if not rows:
         return 0
@@ -237,12 +149,17 @@ def upsert_invoices(
             supplierOrgNo,
             invoiceText,
             dateInvoiced,
+            dateDue,
+            datePaid,
             dateChanged,
             totalIncVat,
             totalVat,
+            amountPaid,
+            balance,
             currencySymbol,
             status,
-            externalStatus
+            externalStatus,
+            isCredited
         ) VALUES (
             :invoiceId,
             :orderId,
@@ -253,12 +170,17 @@ def upsert_invoices(
             :supplierOrgNo,
             :invoiceText,
             :dateInvoiced,
+            :dateDue,
+            :datePaid,
             :dateChanged,
             :totalIncVat,
             :totalVat,
+            :amountPaid,
+            :balance,
             :currencySymbol,
             :status,
-            :externalStatus
+            :externalStatus,
+            :isCredited
         )
         ON CONFLICT(invoiceId) DO UPDATE SET
             orderId        = excluded.orderId,
@@ -269,12 +191,17 @@ def upsert_invoices(
             supplierOrgNo  = excluded.supplierOrgNo,
             invoiceText    = excluded.invoiceText,
             dateInvoiced   = excluded.dateInvoiced,
+            dateDue        = excluded.dateDue,
+            datePaid       = excluded.datePaid,
             dateChanged    = excluded.dateChanged,
             totalIncVat    = excluded.totalIncVat,
             totalVat       = excluded.totalVat,
+            amountPaid     = excluded.amountPaid,
+            balance        = excluded.balance,
             currencySymbol = excluded.currencySymbol,
             status         = excluded.status,
-            externalStatus = excluded.externalStatus;
+            externalStatus = excluded.externalStatus,
+            isCredited     = excluded.isCredited;
         """,
         rows,
     )

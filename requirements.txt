@@ -1,9 +1,24 @@
 phidata
 duckdb
-pandas
-streamlit
 python-dotenv
 openai
 zeep
 xmltodict
 requests
+streamlit>=1.28.0
+pandas>=2.0.0
+plotly>=5.17.0
+
+# ML Agents Requirements
+scikit-learn>=1.3.0
+joblib>=1.3.0
+numpy>=1.24.0
+
+# Optional but recommended
+matplotlib>=3.7.0  # For visualization
+seaborn>=0.12.0   # For better plots
+
+# For more advanced agents (optional)
+# xgboost>=2.0.0  # Gradient boosting
+# lightgbm>=4.0.0  # Fast gradient boosting
+# prophet>=1.1.0  # Time series forecasting

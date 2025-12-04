@@ -13,6 +13,8 @@ def download_invoices(
 ) -> List[Dict[str, Any]]:
     """
     Fetch outgoing invoices/orders via InvoiceService.GetInvoices.
+    
+    UPDATED: Now fetches payment status fields
 
     Target table: invoices_sync
 
@@ -26,12 +28,16 @@ def download_invoices(
       supplierOrgNo   TEXT,
       invoiceText     TEXT,
       dateInvoiced    TEXT,
+      dateDue         TEXT,          -- NEW
       dateChanged     TEXT,
       totalIncVat     REAL,
       totalVat        REAL,
+      amountPaid      REAL,          -- NEW
+      balance         REAL,          -- NEW
       currencySymbol  TEXT,
       status          TEXT,
-      externalStatus  TEXT
+      externalStatus  TEXT,
+      isCredited      INTEGER        -- NEW
     """
     if not FINAGO_INVOICE_URL:
         print("FINAGO_INVOICE_URL not set – skipping invoices.")
@@ -48,7 +54,8 @@ def download_invoices(
 <ChangedAfter>{ds}</ChangedAfter>
 """.strip()
 
-    # Ask for the properties we actually want to persist
+    # UPDATED: Request Paid field which contains payment date
+    # NOTE: The API returns "Paid" field with payment date, not Balance/AmountPaid
     invoice_return_props = """
 <string>OrderId</string>
 <string>CustomerId</string>
@@ -56,12 +63,15 @@ def download_invoices(
 <string>InvoiceId</string>
 <string>InvoiceNumber</string>
 <string>DateInvoiced</string>
+<string>DueDate</string>
 <string>DateChanged</string>
 <string>OrderTotalIncVat</string>
 <string>OrderTotalVat</string>
 <string>Currency</string>
 <string>OrderStatus</string>
 <string>ExternalStatus</string>
+<string>Paid</string>
+<string>IsCredited</string>
 """.strip()
 
     # Row properties – required by API even if we ignore them for now
@@ -123,6 +133,16 @@ def download_invoices(
         except (TypeError, ValueError):
             return 0.0
 
+    def _to_bool(val: Any) -> int:
+        """Convert boolean-ish values to 1/0"""
+        if val in (None, ""):
+            return 0
+        if isinstance(val, bool):
+            return 1 if val else 0
+        if isinstance(val, str):
+            return 1 if val.lower() in ('true', '1', 'yes') else 0
+        return 0
+
     for inv in raw_items:
         # Currency is often a nested object with .Symbol
         currency_symbol = ""
@@ -132,26 +152,58 @@ def download_invoices(
         if isinstance(currency, dict):
             currency_symbol = _v(currency, "Symbol") or ""
 
+        # Get payment-related fields
+        paid_date = _v(inv, "Paid") or ""
+        is_credited = _to_bool(_v(inv, "IsCredited"))
+        total_inc_vat = _to_float(_v(inv, "OrderTotalIncVat"))
+        
+        # Determine actual payment status based on Paid field
+        # If Paid field has a date -> Status = "Paid"
+        # If Paid field is empty/null -> Status = "Unpaid"
+        order_status = _v(inv, "OrderStatus") or "Invoiced"
+        
+        if is_credited:
+            actual_status = "Credited"
+        elif paid_date and paid_date.strip():
+            # Has a payment date -> invoice is paid
+            actual_status = "Paid"
+        else:
+            # No payment date -> invoice is unpaid
+            actual_status = "Unpaid"
+        
+        # Calculate balance based on payment status
+        if actual_status == "Paid":
+            balance = 0.0
+            amount_paid = total_inc_vat
+        elif actual_status == "Credited":
+            balance = 0.0
+            amount_paid = 0.0
+        else:
+            balance = total_inc_vat
+            amount_paid = 0.0
+
         invoices.append(
             {
                 "invoiceId": _to_int(_v(inv, "InvoiceId")) or 0,
                 "orderId": _to_int(_v(inv, "OrderId")),
                 "customerId": _to_int(_v(inv, "CustomerId")),
                 "customerName": _v(inv, "CustomerName") or "",
-                # This is important for joining transactions ↔ invoices
                 "invoiceNo": _v(inv, "InvoiceNumber") or _v(inv, "InvoiceNo") or "",
-                # For AR this may be empty; for AP you'd typically get this from another service,
-                # but we keep the columns so the schema is stable.
                 "supplierName": _v(inv, "SupplierName") or "",
                 "supplierOrgNo": _v(inv, "SupplierOrganizationNumber") or "",
                 "invoiceText": _v(inv, "Text") or _v(inv, "Description") or "",
                 "dateInvoiced": _v(inv, "DateInvoiced") or _v(inv, "InvoiceDate") or "",
+                "dateDue": _v(inv, "DueDate") or "",
+                "datePaid": paid_date if paid_date and paid_date.strip() else None,  # NEW: Store actual payment date
                 "dateChanged": _v(inv, "DateChanged") or "",
-                "totalIncVat": _to_float(_v(inv, "OrderTotalIncVat")),
+                "totalIncVat": total_inc_vat,
                 "totalVat": _to_float(_v(inv, "OrderTotalVat")),
+                "amountPaid": amount_paid,
+                "balance": balance,
                 "currencySymbol": currency_symbol,
-                "status": _v(inv, "OrderStatus") or "",
+                "status": actual_status,
                 "externalStatus": str(_v(inv, "ExternalStatus") or ""),
+                "isCredited": is_credited,
             }
         )
 
