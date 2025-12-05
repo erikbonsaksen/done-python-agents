@@ -54,8 +54,11 @@ class PaymentRiskScorer(BaseMLAgent):
     def prepare_features(self, df: pd.DataFrame, customer_history: pd.DataFrame) -> pd.DataFrame:
         """Engineer features for payment risk prediction"""
         
-        # Merge with customer history
+        # Merge with customer history - use 'left' to keep only invoice rows
         df = df.merge(customer_history, on='customerId', how='left', suffixes=('', '_hist'))
+        
+        # IMPORTANT: Reset index after merge to avoid index misalignment
+        df = df.reset_index(drop=True)
         
         # Fill missing values
         df['avg_days_to_pay'] = df['avg_days_to_pay'].fillna(30)
@@ -128,9 +131,17 @@ class PaymentRiskScorer(BaseMLAgent):
             
             # Create target: was it paid late?
             # Late = paid more than 7 days after due date
+            paid_invoices['effective_due_date'] = paid_invoices.apply(
+                lambda row: row['dateDue'] if pd.notna(row['dateDue']) 
+                            else row['dateInvoiced'] + pd.Timedelta(days=14),
+                axis=1
+            )
+
             paid_invoices['days_overdue'] = (
-                (paid_invoices['datePaid'] - paid_invoices['dateDue']).dt.days
-            ).fillna(0)
+                (paid_invoices['datePaid'] - paid_invoices['effective_due_date']).dt.days
+            )
+
+            # Late = paid more than 7 days after due date
             paid_invoices['paid_late'] = (paid_invoices['days_overdue'] > 7).astype(int)
             
             late_count = paid_invoices['paid_late'].sum()
@@ -144,8 +155,17 @@ class PaymentRiskScorer(BaseMLAgent):
             
             # Prepare features
             print("\n🔧 Engineering features...")
+
+            # Check for duplicate customers in history (should be unique per customerId)
+            if customer_history['customerId'].duplicated().any():
+                print("   ⚠️  Removing duplicate customers from history...")
+                customer_history = customer_history.drop_duplicates(subset=['customerId'], keep='first')
+
             X = self.prepare_features(paid_invoices, customer_history)
             y = paid_invoices['paid_late']
+
+            # Ensure X and y have same length
+            assert len(X) == len(y), f"Feature matrix ({len(X)}) and target ({len(y)}) have different lengths!"
             
             print(f"   Features: {len(self.feature_names)}")
             
